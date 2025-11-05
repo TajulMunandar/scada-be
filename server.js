@@ -1,4 +1,3 @@
-// server.js
 import mqtt from "mqtt";
 import express from "express";
 import { createServer } from "http";
@@ -6,40 +5,58 @@ import { Server } from "socket.io";
 
 const app = express();
 const server = createServer(app);
+
+// Socket.IO dengan CORS
 const io = new Server(server, {
-  cors: {
-    origin: "*", // atau domain React kamu
-  },
+  cors: { origin: "*" },
 });
 
-// Koneksi ke MQTT broker
-const client = mqtt.connect("mqtt://monpase.xtend.my.id:8112", {
+// ================= MQTT =================
+const mqttOptions = {
   username: "xtend-idn",
   password: "Xtend@idn018",
   connectTimeout: 5000,
-  reconnectPeriod: 1000,
-});
+  reconnectPeriod: 2000, // coba reconnect tiap 2 detik
+};
 
-client.on("connect", () => {
+const mqttClient = mqtt.connect("mqtt://monpase.xtend.my.id:8112", mqttOptions);
+
+mqttClient.on("connect", () => {
   console.log("✅ Connected to MQTT broker");
-  client.subscribe("data/ipa-lhoksukon-3", (err) => {
+  mqttClient.subscribe("data/ipa-lhoksukon-3", (err) => {
     if (!err) console.log("📡 Subscribed to topic");
   });
 });
 
-// Saat ada pesan baru dari broker MQTT
-client.on("message", (topic, message) => {
-  const data = JSON.parse(message.toString());
-  console.log("📩 Received data:", data);
-
-  // Kirim data ke semua client React yang terkoneksi
-  io.emit("mqtt_message", data);
+mqttClient.on("reconnect", () => {
+  console.log("🔄 Reconnecting to MQTT broker...");
 });
 
-client.on("error", (err) => {
+mqttClient.on("error", (err) => {
   console.error("❌ MQTT Error:", err);
 });
 
-server.listen(5000, () => {
-  console.log("🚀 Node server running on port 5000");
+mqttClient.on("message", (topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    console.log("📩 MQTT Data:", data);
+    io.emit("mqtt_message", data); // kirim ke semua client
+  } catch (err) {
+    console.error("❌ Failed to parse MQTT message:", err);
+  }
+});
+
+// ================= Socket.IO =================
+io.on("connection", (socket) => {
+  console.log("🟢 New client connected:", socket.id);
+
+  socket.on("disconnect", (reason) => {
+    console.log(`🔴 Client disconnected: ${socket.id}, reason: ${reason}`);
+  });
+});
+
+// ================= Server listen =================
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`🚀 Node server running on port ${PORT}`);
 });
